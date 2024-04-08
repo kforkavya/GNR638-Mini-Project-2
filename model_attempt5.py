@@ -136,7 +136,7 @@ def train_model(model, train_loader, criterion, optimizer, device, num_epochs=10
     last_checkpoint_name = None
 
     for epoch in range(num_epochs):
-        checkpoint_name = f"./checkpoints/attempt5/epoch{epoch}.pth"
+        checkpoint_name = f"./checkpoints/attempt5/epoch{epoch+1}.pth"
         if os.path.exists(checkpoint_name):
             last_checkpoint_name = checkpoint_name
         else:
@@ -148,14 +148,14 @@ def train_model(model, train_loader, criterion, optimizer, device, num_epochs=10
             for i, (blurred_images, target_image) in enumerate(train_loader):
                 for blurred_image in blurred_images:
                     # Move data to device
-                    blurred_images = blurred_image.to(device)
+                    blurred_image = blurred_image.to(device)
                     target_image = target_image.to(device)
 
                     # Zero the parameter gradients
                     optimizer.zero_grad()
 
                     # Forward pass
-                    outputs = model(blurred_images)
+                    outputs = model(blurred_image)
 
                     # Calculate loss
                     loss = criterion(outputs, target_image)
@@ -170,18 +170,19 @@ def train_model(model, train_loader, criterion, optimizer, device, num_epochs=10
                     print(f'Epoch [{epoch + 1}/{num_epochs}], Step [{i}/{len(train_loader)}], Loss: {running_loss / 10:.4f}')
             print("AN EPOCH DONE")
             prepare_submission(model, checkpoint_name)
-        evaluate(model)
+            evaluate(model, epoch)
 
 # Define the evaluation function
-def evaluate(model):
+def evaluate(model, epoch):
     for input_file_name in os.listdir(blur_image_dir):
         if os.path.isfile(os.path.join(blur_image_dir, input_file_name)) and (input_file_name.endswith('.png') or input_file_name.endswith('.jpg')):
             # Load the image
-            input_image = Image.open(blur_image_dir)
+            input_image = Image.open(os.path.join(blur_image_dir, input_file_name))
 
             # Preprocess the image
             transform = ToTensor()
             input_tensor = transform(input_image).unsqueeze(0)
+            input_tensor = input_tensor.to(device)
 
             # Deblur the image using the model
             with torch.no_grad():
@@ -194,9 +195,9 @@ def evaluate(model):
             # Save the deblurred image
             output_image.save(os.path.join(sharp_image_dir, input_file_name))
     # Run eval.py to calculate PSNR
-    os.system('cd mp2/test')
-    os.system('python3 eval.py')
-    os.system('cd ..')
+    os.system('python3 mp2_test/eval.py')
+    os.system('cp -R mp2_test/ ../Temp')
+    os.system(f'mv ../Temp/mp2_test ../Temp/mp2_test_epoch_{epoch+1}')
 
 def main():
     # Paths to data directories
@@ -210,7 +211,7 @@ def main():
     os.system(f'mkdir -p {gaussian_dir}')
     test_images_dir = './mp2_test/custom_test/sharp'
     global checkpoint_dir
-    checkpoint_dir = './checkpoints/attempt3'
+    checkpoint_dir = './checkpoints/attempt5'
     os.system(f'mkdir -p {checkpoint_dir}')
     # Define paths
     global blur_image_dir
@@ -218,6 +219,7 @@ def main():
     blur_image_dir = 'mp2_test/custom_test/blur'
     sharp_image_dir = 'mp2_test/custom_test/sharp'
     os.system(f'mkdir -p {sharp_image_dir}')
+    os.system('mkdir -p ../Temp')
 
     # Step 2
     # downscale_images(sharp_images_dir, downscaled_dir)
@@ -232,7 +234,7 @@ def main():
     dataset = CustomDataset(gaussian_dir, downscaled_dir, transform)
 
     # Create data loader
-    train_loader = DataLoader(dataset, batch_size=8, shuffle=True)
+    train_loader = DataLoader(dataset, batch_size=16, shuffle=True)
 
     # Define model, loss function, optimizer
     model = DeblurModel()
@@ -240,7 +242,8 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # Set GPU or CPU
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    global device
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Train the model
     train_model(model, train_loader, criterion, optimizer, device)
